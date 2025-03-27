@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, ForeignKey
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -11,4 +11,7 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     puuid = Column(String, unique=True, nullable=True)
     
+    role_id = Column(Integer, ForeignKey("roles.id"), nullable=False, default=2)
+    
     games = relationship("Game", back_populates="user", cascade="all, delete")
+    role = relationship("Role", back_populates="users")

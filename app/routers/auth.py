@@ -5,6 +5,7 @@ from app.schemas.user import UserCreate, UserOut, UserLogin
 from app.services.auth_service import create_user, authenticate_user, create_access_token
 from app.core.config import settings
 from app.core.database import SessionLocal
+from app.core.security import require_role
 from app.models.user import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -45,3 +46,7 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
     )
     
     return {"access token": acces_token, "token_type": "bearer"}
+
+@router.get("/admin/test")
+def admin_only_route(current_user: User = Depends(require_role("admin"))):
+    return { "message": f"Bienvenue {current_user.username}, vous êtes {current_user.role.description}"}

@@ -35,4 +35,14 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_exception
     
     return user
+
+def require_role(required_role: str):
+    def role_dependency(current_user: User = Depends(get_current_user)):
+        if current_user.role.name != required_role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Accès réservé aux utilisateurs avec le rôle '{required_role}'."
+            )
+        return current_user
+    return role_dependency
         

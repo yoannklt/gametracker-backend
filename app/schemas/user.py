@@ -9,6 +9,7 @@ class UserOut(BaseModel):
     id: int
     email: EmailStr
     username: str
+    role: str
     
     class Config: {
         "from_attribute": True
@@ -17,3 +18,6 @@ class UserOut(BaseModel):
 class UserLogin(BaseModel):
     identifier: str # Mail ou Username
     password: str
+    
+class RoleUpdate(BaseModel):
+    role_name: str
