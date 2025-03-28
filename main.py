@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from sqlalchemy.orm import Session
 from app.core.database import Base, engine
 from app.models.role import Role
-from app.routers import auth, admin, users, games
+from app.routers import auth, admin, users, games, riot
 from app.models import user, game, role
 
 app = FastAPI()
@@ -18,6 +18,7 @@ app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(users.router)
 app.include_router(games.router)
+app.include_router(riot.router)
 
 def seed_roles():
     db = Session(bind=engine)

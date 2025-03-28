@@ -21,3 +21,8 @@ class UserLogin(BaseModel):
     
 class RoleUpdate(BaseModel):
     role_name: str
+    
+class RiotAccount(BaseModel):
+    game_name: str
+    tag_line: str
+    region: str
