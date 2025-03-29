@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.schemas.user import RiotAccount
-from app.services.riot_service import get_puuid_from_riot, get_recent_match_ids
+from app.services.riot_service import get_puuid_from_riot, get_recent_match_ids, get_match_details, extract_player_data
 from app.core.database import SessionLocal
 from app.core.security import get_current_user
 from app.models.user import User
-from app.schemas.riot import RiotLinkResponse
+from app.schemas.riot import RiotLinkResponse, PlayerMatchData
 
 router = APIRouter(prefix="/riot", tags=["riot"])
 
@@ -51,3 +51,12 @@ def get_user_matchs_ids(
         "message": "Matchs récupérés avec succès",
         "match_ids": match_ids
     }
+    
+@router.get("/match/{match_id}", response_model=PlayerMatchData)
+def get_match_info(match_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not current_user.puuid or not current_user.region:
+        raise HTTPException(status_code=400, detail="Compte Riot non lié ou région non définie")
+    
+    match_details = get_match_details(match_id, current_user.region)
+    player_data = extract_player_data(match_details, current_user.puuid)
+    return player_data
