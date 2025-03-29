@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.schemas.user import RiotAccount
-from app.services.riot_service import get_puuid_from_riot, get_recent_match_ids, get_match_details, extract_player_data
+from app.services.riot_service import get_puuid_from_riot, get_recent_match_ids, get_match_details, extract_player_data, store_match_if_not_exists
 from app.core.database import SessionLocal
 from app.core.security import get_current_user
 from app.models.user import User
@@ -60,3 +60,28 @@ def get_match_info(match_id: str, db: Session = Depends(get_db), current_user: U
     match_details = get_match_details(match_id, current_user.region)
     player_data = extract_player_data(match_details, current_user.puuid)
     return player_data
+
+
+@router.get("/history", response_model=list[PlayerMatchData])
+def get_match_history(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if not current_user.puuid or not current_user.region:
+        raise HTTPException(status_code=400, detail="Compte Riot non liée ou région non définie")
+    
+    match_ids = get_recent_match_ids(current_user.puuid, current_user.region)
+    
+    results = []
+    
+    for match_id in match_ids:
+        try:
+            match_data = get_match_details(match_id, current_user.region)
+            store_match_if_not_exists(db, match_data, current_user.puuid, current_user.id)
+            player_data = extract_player_data(match_data, current_user.puuid)
+            results.append(player_data)
+        except Exception as e:
+            print(f"Erreur lorts du traitement du match {match_id} : {e}")
+            continue
+    
+    return results

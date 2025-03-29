@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.core.database import Base, engine
 from app.models.role import Role
 from app.routers import auth, admin, users, games, riot
-from app.models import user, game, role
+from app.models import user, game, role, match
 
 app = FastAPI()
 

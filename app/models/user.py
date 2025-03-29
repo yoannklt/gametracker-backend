@@ -18,3 +18,4 @@ class User(Base):
     
     games = relationship("Game", back_populates="user", cascade="all, delete")
     role = relationship("Role", back_populates="users")
+    matches = relationship("Match", back_populates="user")

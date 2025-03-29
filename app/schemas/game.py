@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import List
 from datetime import datetime
 
 class GameCreate(BaseModel):
@@ -18,3 +19,14 @@ class GameOut(BaseModel):
 class GameUpdate(BaseModel):
     composition: str
     victory: bool
+    
+class CompositionStats(BaseModel):
+    composition: List[str]
+    games_played: int
+    wins: int
+    win_rate: float
+    avg_placement: float
+    
+    class Config: {
+        "from_attributes": True
+    }

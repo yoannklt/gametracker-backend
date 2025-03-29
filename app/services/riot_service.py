@@ -1,6 +1,9 @@
 import requests
+from datetime import datetime
+from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from app.core.config import settings
+from app.models.match import Match
 
 API_KEY = settings.RIOT_API_KEY
 HEADERS = { "X-Riot-Token": API_KEY }
@@ -26,7 +29,7 @@ def get_puuid_from_riot(game_name: str, tag_line: str, region: str):
             detail=f"Erreur API Riot: {response.status_code} - {response.text}"
         )
         
-def get_recent_match_ids(puuid: str, region: str, count: int = 10):
+def get_recent_match_ids(puuid: str, region: str, count: int = 10) -> list[str]:
     if region not in VALID_REGION:
         raise HTTPException(status_code=400, detail="Région invalide")
     
@@ -94,3 +97,32 @@ def extract_player_data(match_data: dict, puuid: str) -> dict:
 
     except KeyError as e:
         raise HTTPException(status_code=500, detail=f"Champ manquant dans la réponse Riot : {e}")
+
+
+def store_match_if_not_exists(db: Session, match_data: dict, puuid: str, user_id: int):
+    match_id = match_data["metadata"]["match_id"]
+    
+    existing = db.query(Match).filter_by(match_id=match_id).first()
+    if existing:
+        return
+    
+    player_data = extract_player_data(match_data, puuid)
+    
+    timestamp_ms = match_data["info"]["game_datetime"]
+    played_at = datetime.fromtimestamp(timestamp_ms / 1000)
+    
+    match = Match(
+        match_id=match_id,
+        puuid=puuid,
+        user_id=user_id,
+        placement=player_data["placement"],
+        level=player_data["level"],
+        gold_left=player_data["gold_left"],
+        last_round=player_data["last_round"],
+        traits=player_data["traits"],
+        units=player_data["units"],
+        played_at=played_at
+    )
+    
+    db.add(match)
+    db.commit()
