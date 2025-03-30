@@ -46,7 +46,3 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
     )
     
     return {"access token": acces_token, "token_type": "bearer"}
-
-@router.get("/admin/test")
-def admin_only_route(current_user: User = Depends(require_role("admin"))):
-    return { "message": f"Bienvenue {current_user.username}, vous êtes {current_user.role.description}"}

@@ -1,27 +1,7 @@
 from pydantic import BaseModel
-from typing import List
-from datetime import datetime
-
-class GameCreate(BaseModel):
-    composition: str
-    victory: bool
-    
-class GameOut(BaseModel):
-    id: int
-    composition: str
-    victory: bool
-    timestamp: datetime
-    
-    model_config = {
-        "from_attributes": True
-    }
-    
-class GameUpdate(BaseModel):
-    composition: str
-    victory: bool
     
 class CompositionStats(BaseModel):
-    composition: List[str]
+    composition: str
     games_played: int
     wins: int
     win_rate: float
@@ -30,3 +10,13 @@ class CompositionStats(BaseModel):
     class Config: {
         "from_attributes": True
     }
+    
+class UnitStats(BaseModel):
+    character_id: str
+    count: int
+    winrate: float
+    
+class TraitStats(BaseModel):
+    name: str
+    count: int
+    winrate: float

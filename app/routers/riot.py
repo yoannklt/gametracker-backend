@@ -17,8 +17,19 @@ def get_db():
         db.close()
         
 @router.put("/link-riot", response_model=RiotLinkResponse)
-def link_riot_account(data: RiotAccount, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def link_riot_account(
+    data: RiotAccount, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     puuid = get_puuid_from_riot(data.game_name, data.tag_line, data.region)
+    
+    existing_user = db.query(User).filter(User.puuid == puuid, User.id != current_user.id).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=400,
+            detail="Ce compte Riot est déjà lié à un autre utilisateur"
+        )
     
     current_user.game_name = data.game_name.lower()
     current_user.tag_line = data.tag_line.lower()
@@ -36,9 +47,23 @@ def link_riot_account(data: RiotAccount, db: Session = Depends(get_db), current_
         "puuid": current_user.puuid
     }
     
+@router.delete("/unlink-riot")
+def unlink_riot_account(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    current_user.game_name = None,
+    current_user.tag_line = None,
+    current_user.puuid = None,
+    current_user.region = None  
+    
+    db.merge(current_user)
+    db.commit()
+    
+    return {"message": "Compte Riot délié avec succès."}
+    
 @router.get("/matches")
 def get_user_matchs_ids(
-    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     if not current_user.puuid or not current_user.region:
@@ -53,7 +78,7 @@ def get_user_matchs_ids(
     }
     
 @router.get("/match/{match_id}", response_model=PlayerMatchData)
-def get_match_info(match_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_match_info(match_id: str, current_user: User = Depends(get_current_user)):
     if not current_user.puuid or not current_user.region:
         raise HTTPException(status_code=400, detail="Compte Riot non lié ou région non définie")
     
@@ -81,7 +106,7 @@ def get_match_history(
             player_data = extract_player_data(match_data, current_user.puuid)
             results.append(player_data)
         except Exception as e:
-            print(f"Erreur lorts du traitement du match {match_id} : {e}")
+            print(f"Erreur lors du traitement du match {match_id} : {e}")
             continue
     
     return results

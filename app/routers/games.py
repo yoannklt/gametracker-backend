@@ -1,14 +1,13 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import Integer, func
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from collections import defaultdict
+from collections import Counter
+from app.services.riot_service import compute_stats_by_traits
 from app.core.database import SessionLocal
 from app.core.security import get_current_user
-from app.schemas.game import GameCreate, GameOut, GameUpdate, CompositionStats
+from app.schemas.game import CompositionStats, UnitStats, TraitStats
 from app.schemas.match import MatchOut
 from app.models.match import Match
-from app.models.game import Game
 from app.models.user import User
 
 router = APIRouter(prefix="/games", tags=["games"])
@@ -20,17 +19,6 @@ def get_db ():
     finally:
         db.close()
         
-@router.post("/add", response_model=GameOut)
-def add_game(game_data: GameCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    new_game = Game(
-        user_id=current_user.id,
-        composition=game_data.composition,
-        victory=game_data.victory
-    )
-    db.add(new_game)
-    db.commit()
-    db.refresh(new_game)
-    return new_game
 
 @router.get("/history", response_model=List[MatchOut])
 def get_history(
@@ -51,37 +39,7 @@ def get_history(
         raise HTTPException(status_code=404, detail="Aucun match trouvé.")
     
     return matches
-        
-@router.delete("/{game_id}/delete")
-def delete_game(game_id: int, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
-    game = db.query(Game).filter(Game.id == game_id, Game.user_id == current_user.id).first()
-    
-    if not game:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Partie non trouvée ou accès interdit"
-        )
-    
-    db.delete(game)
-    db.commit()
-    return {"detail": "Partie supprimée avec succès."}
-    
-@router.put("/{game_id}/update")
-def update_game(game_id: int, game_data: GameUpdate, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
-    game = db.query(Game).filter(Game.id == game_id, Game.user_id == current_user.id).first()
-
-    if not game: 
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Partie non trouvée ou accès interdit"
-        )
-        
-    game.composition = game_data.composition
-    game.victory = game_data.victory
-    db.commit()
-    db.refresh(game)
-    return game
-        
+               
         
 @router.get("/stats", response_model=List[CompositionStats])
 def get_composition_stats(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -90,33 +48,71 @@ def get_composition_stats(db: Session = Depends(get_db), current_user: User = De
         .filter(Match.user_id == current_user.id)
         .all()
     )
-    print(len(matches))
-    stats = defaultdict(lambda: {"games_played": 0, "wins": 0, "placements": []})
 
+    return compute_stats_by_traits(matches)
+
+
+@router.get("/top-units", response_model=List[UnitStats])
+def get_top_units(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    matches = db.query(Match).filter(Match.user_id == current_user.id).all()
+    
+    if not matches:
+        raise HTTPException(status_code=404, detail="Aucun match trouvé pour l'utilisateur")
+    
+    unit_counter = Counter()
+    win_counter = Counter()
+    
     for match in matches:
-        unit_names = [unit["character_id"] for unit in match.units]
-        unit_names.sort()
-        compo_key = tuple(unit_names)
+        placement = match.placement
+        for unit in match.units:
+            cid = unit["character_id"]
+            unit_counter[cid] += 1
+            if placement <= 4:
+                win_counter[cid] += 1
+            
+    top_units = unit_counter.most_common(5)
+    
+    return [
+        {
+            "character_id": cid,
+            "count": count,
+            "winrate": round((win_counter[cid] / count) * 100, 2) if count > 0 else 0.0
+        }
+        for cid, count in top_units
+    ]
 
-        stats[compo_key]["games_played"] += 1
-        if match.placement <= 4:
-            stats[compo_key]["wins"] += 1
-        stats[compo_key]["placements"].append(match.placement)
 
-    response = []
-    for compo, data in stats.items():
-        games_played = data["games_played"]
-        wins = data["wins"]
-        placements = data["placements"]
-        avg_placement = sum(placements) / games_played if games_played else 0
-        win_rate = (wins / games_played) * 100 if games_played else 0
-
-        response.append(CompositionStats(
-            composition=list(compo),
-            games_played=games_played,
-            wins=wins,
-            win_rate=round(win_rate, 2),
-            avg_placement=round(avg_placement, 2)
-        ))
-
-    return response
+@router.get("/top-traits", response_model=List[TraitStats])
+def get_top_traits(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    matches = db.query(Match).filter(Match.user_id == current_user.id).all()
+    
+    if not matches:
+        raise HTTPException(status_code=404, detail="Aucun match trouvé pour l'utilisateur")
+    
+    trait_counter = Counter()
+    win_counter = Counter()
+    
+    for match in matches:
+        placement = match.placement
+        for trait in match.traits:
+            tn = trait["name"]
+            trait_counter[tn] += 1
+            if placement <= 4:
+                win_counter[tn] += 1
+            
+    top_traits = trait_counter.most_common(5)
+    
+    return [
+        {
+            "name": tn.replace("TFT13_", "").lower(),
+            "count": count,
+            "winrate": round((win_counter[tn] / count) * 100, 2) if count > 0 else 0.0
+        }
+        for tn, count in top_traits
+    ]

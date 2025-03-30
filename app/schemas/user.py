@@ -10,6 +10,9 @@ class UserOut(BaseModel):
     email: EmailStr
     username: str
     role: str
+    game_name: str
+    tag_line: str
+    region: str
     
     class Config: {
         "from_attribute": True

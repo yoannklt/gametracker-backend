@@ -1,7 +1,9 @@
 import requests
+from typing import List
 from datetime import datetime
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
+from collections import defaultdict
 from app.core.config import settings
 from app.models.match import Match
 
@@ -29,7 +31,7 @@ def get_puuid_from_riot(game_name: str, tag_line: str, region: str):
             detail=f"Erreur API Riot: {response.status_code} - {response.text}"
         )
         
-def get_recent_match_ids(puuid: str, region: str, count: int = 10) -> list[str]:
+def get_recent_match_ids(puuid: str, region: str, count: int = 10) -> List[str]:
     if region not in VALID_REGION:
         raise HTTPException(status_code=400, detail="Région invalide")
     
@@ -61,42 +63,112 @@ def get_match_details(match_id: str, region: str):
         )
         
 def extract_player_data(match_data: dict, puuid: str) -> dict:
+    # print(puuid == "ms0UplvcaeM55brRe0Ib-_iBvXz2nkIcLJM_1z3_NJQGwfRFpg-oqpFdfRMyrAWiubx7R_bhbQ7opA")
     try:
-        participant = next((p for p in match_data["info"]["participants"] if p["puuid"] == puuid), None)
-        
+        participant = None
+        for p in match_data["info"]["participants"]:
+            if p["puuid"] == puuid:
+                participant = p
+                break
+
         if not participant:
             raise HTTPException(status_code=404, detail="PUUID non trouvé dans ce match")
-
+    except Exception as e:
+        raise ValueError(f"Erreur lors de la récupération du participant : {e}")
+        
+    if not participant:
+        raise HTTPException(status_code=404, detail="PUUID non trouvé dans ce match")
+    
+    try:
         traits = [
             {
-                "name": trait["name"],
-                "tier_current": trait["tier_current"],
-                "num_units": trait["num_units"]
+                "name": trait.get("name", ""),
+                "tier_current": trait.get("tier_current", 0),
+                "num_units": trait.get("num_units", 0)
             }
-            for trait in participant["traits"]
-            if trait["tier_current"] > 0
+            for trait in participant.get("traits", [])
+            if trait.get("tier_current", 0) > 0
         ]
 
         units = [
             {
-                "character_id": unit["character_id"],
-                "tier": unit["tier"],
-                "items": unit.get("itemNames", [])
+                "character_id": unit.get("character_id", ""),
+                "tier": unit.get("tier", 0),
+                "items": unit.get("itemsName", [])  # ⚠️ On utilise bien "itemsName"
             }
-            for unit in participant["units"]
+            for unit in participant.get("units", [])
         ]
 
         return {
-            "placement": participant["placement"],
-            "level": participant["level"],
-            "gold_left": participant["gold_left"],
-            "last_round": participant["last_round"], 
+            "placement": participant.get("placement", 0),
+            "level": participant.get("level", 0),
+            "gold_left": participant.get("gold_left", 0),
+            "last_round": participant.get("last_round", 0),
             "traits": traits,
             "units": units
         }
 
     except KeyError as e:
-        raise HTTPException(status_code=500, detail=f"Champ manquant dans la réponse Riot : {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur lors de l'extraction des données du joueur: {e}")
+    
+
+def compute_stats_by_traits(matches: List[Match]) -> dict:
+    stats = defaultdict(lambda: {"wins": 0, "games": 0, "total_placement": 0})
+    
+    for match in matches:
+        traits = match.traits
+        if not traits:
+            continue
+        
+        sorted_traits = sorted(traits, key=lambda x: x["tier_current"], reverse=True)
+        
+        max_tier = sorted_traits[0]["tier_current"]
+        main_traits = [t["name"].replace("TFT13_", "").lower() for t in sorted_traits if t["tier_current"] == max_tier]
+        
+        trait_key = " ".join(sorted(main_traits))
+        
+        stats[trait_key]["games"] += 1
+        stats[trait_key]["total_placement"] += match.placement
+        if match.placement <= 4:
+            stats[trait_key]["wins"] += 1
+            
+    result = []
+    for trait_key, data in stats.items():
+        games = data["games"]
+        wins = data["wins"]
+        winrate = round((wins / games) * 100, 2)
+        avg_placement = round(data["total_placement"] / games, 2)
+        result.append({
+            "composition": trait_key,
+            "games_played": games,
+            "wins": wins,
+            "win_rate": winrate,
+            "avg_placement": avg_placement
+        })
+    
+    return result
+
+
+def detect_main_composition(traits: dict) -> str:
+    """
+    Détecte la composition principale basée sur les traits activés (tier_current > 0).
+    Retourne une chaîne formatée du type "challenger-bastion"
+    """
+    # On filtre les traits actifs
+    active_traits = [trait for trait in traits if trait["tier_current"] > 0]
+
+    # On trie d'abord par `tier_current`, puis par `num_units` pour départager les égalités
+    sorted_traits = sorted(
+        active_traits,
+        key=lambda t: (t["tier_current"], t["num_units"]),
+        reverse=True
+    )
+
+    # On prend les 2 traits les plus forts (ou 1 seul si pas assez)
+    main_traits = sorted_traits[:2]
+    names = [trait["name"].replace("TFT13_", "").lower() for trait in main_traits]
+
+    return "-".join(names)
 
 
 def store_match_if_not_exists(db: Session, match_data: dict, puuid: str, user_id: int):
@@ -107,7 +179,7 @@ def store_match_if_not_exists(db: Session, match_data: dict, puuid: str, user_id
         return
     
     player_data = extract_player_data(match_data, puuid)
-    
+    composition_name = detect_main_composition(player_data["traits"])
     timestamp_ms = match_data["info"]["game_datetime"]
     played_at = datetime.fromtimestamp(timestamp_ms / 1000)
     
@@ -119,6 +191,7 @@ def store_match_if_not_exists(db: Session, match_data: dict, puuid: str, user_id
         level=player_data["level"],
         gold_left=player_data["gold_left"],
         last_round=player_data["last_round"],
+        composition_name=composition_name,
         traits=player_data["traits"],
         units=player_data["units"],
         played_at=played_at

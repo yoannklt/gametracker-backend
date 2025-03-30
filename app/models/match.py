@@ -13,6 +13,7 @@ class Match(Base):
     gold_left = Column(Integer)
     last_round = Column(Integer)
     
+    composition_name = Column(String, nullable=True)
     traits = Column(JSON)
     units = Column(JSON)
     

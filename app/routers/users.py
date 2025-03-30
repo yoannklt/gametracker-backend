@@ -11,5 +11,8 @@ def get_me(current_user: User = Depends(get_current_user)):
         "id": current_user.id,
         "email": current_user.email,
         "username": current_user.username,
-        "role": current_user.role.name
+        "role": current_user.role.name,
+        "game_name": current_user.game_name if current_user.game_name != None else "",
+        "tag_line": current_user.tag_line if current_user.tag_line != None else "",
+        "region": current_user.region if current_user.region != None else ""
     }
