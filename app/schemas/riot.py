@@ -27,3 +27,15 @@ class PlayerMatchData(BaseModel):
     last_round: int
     traits: List[Trait]
     units: List[Unit]
+
+class RiotSummonerInfo(BaseModel):
+    game_name: str
+    tag_line: str
+    summoner_level: int
+    profile_icon_id: int
+    tier: str
+    rank: str
+    league_points: int
+    wins: int
+    losses: int
+    hot_streak: int

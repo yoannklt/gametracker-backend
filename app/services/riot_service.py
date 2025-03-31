@@ -199,3 +199,41 @@ def store_match_if_not_exists(db: Session, match_data: dict, puuid: str, user_id
     
     db.add(match)
     db.commit()
+    
+def get_summoner_info(game_name: str, tag_line: str, region: str) -> dict:
+    if region not in VALID_REGION:
+        raise HTTPException(status_code=400, detail="Région invalide")
+    
+    account_url = f"https://{region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
+    account_res = requests.get(url=account_url, headers=HEADERS)
+    if account_res.status_code != 200:
+        raise HTTPException(status_code=account_res.status_code, detail="Compte Riot introuvable")
+    puuid = account_res.json()["puuid"]
+    
+    summoner_url = f"https://euw1.api.riotgames.com/tft/summoner/v1/summoners/by-puuid/{puuid}"
+    summoner_res = requests.get(url=summoner_url, headers=HEADERS)
+    if summoner_res.status_code != 200:
+        raise HTTPException(status_code=summoner_res.status_code, detail="Invocateur introuvable")
+    summoner_data = summoner_res.json()
+    
+    summoner_id = summoner_data["id"]
+    league_url = f"https://euw1.api.riotgames.com/tft/league/v1/entries/by-summoner/{summoner_id}"
+    league_res = requests.get(url=league_url, headers=HEADERS)
+    if league_res.status_code != 200:
+        raise HTTPException(status_code=league_res.status_code, detail="Classement introuvable")
+    league_data = league_res.json()
+    
+    tft_ranked = next((entry for entry in league_data if entry["queueType"] == "RANKED_TFT"), None)
+    
+    return {
+                "game_name": game_name,
+        "tag_line": tag_line,
+        "summoner_level": summoner_data["summonerLevel"],
+        "profile_icon_id": summoner_data["profileIconId"],
+        "tier": tft_ranked["tier"] if tft_ranked else "UNRANKED",
+        "rank": tft_ranked["rank"] if tft_ranked else "",
+        "league_points": tft_ranked["leaguePoints"] if tft_ranked else 0,
+        "wins": tft_ranked["wins"] if tft_ranked else 0,
+        "losses": tft_ranked["losses"] if tft_ranked else 0,
+        "hot_streak": tft_ranked["hotStreak"] if tft_ranked else False,
+    }
